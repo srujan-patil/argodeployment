@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       labels:
-        app:movie-app
+        app: movie-app
     spec:
       containers:
         - name: movie-app
