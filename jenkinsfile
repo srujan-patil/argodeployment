@@ -1,66 +1,80 @@
-pipeline{
-    agent any 
+pipeline {
+    agent any
 
-    options{
-        disableConcurrentBuilds
-        }
-    environment{
-        IMAGE_NAME="srujanpanthula90/mutibranch-flask-app"
-        GIT_USER = "srujan-patil"
-        GIT_EMAIL = "srujanpanthula90@gmail.com"
+    options {
+        disableConcurrentBuilds()
     }
-    
-        stages{
-            stage('checkout'){
-                steps{
-                    checkout scm
+
+    environment {
+        IMAGE_NAME = "srujanpanthula90/mutibranch-flask-app"
+        GIT_USER   = "srujan-patil"
+        GIT_EMAIL  = "srujanpanthula90@gmail.com"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build and Push Image') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    env.IMAGE_TAG = "build-${BUILD_NUMBER}"
+
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: "dockerhub-creds",
+                            usernameVariable: "DOCKER_USER",
+                            passwordVariable: "DOCKER_PASSWORD"
+                        )
+                    ]) {
+                        sh """
+                        echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USER}" --password-stdin
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        """
+                    }
                 }
             }
+        }
 
-            stage('Build and push image'){
-                when { branch 'main'}  
-                steps{
-                    def IMAGE_TAG= "build-${BUILD_NUMBER}"
+        stage('Update K8s Manifest') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: "github-creds",
+                            usernameVariable: "GIT_USERNAME",
+                            passwordVariable: "GIT_TOKEN"
+                        )
+                    ]) {
+                        sh """
+                        set -e
+                        git config user.name "${GIT_USER}"
+                        git config user.email "${GIT_EMAIL}"
 
-                    withCredentials([usernamePassword(
-                        credentialsId: "dockerhub-creds",
-                        usernameVariable: "DOCKER_USER",
-                        passwordVariable: "DOCKER_PASSWORD"
-                        )]){
-                            sh"""
-                            docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USER" --password-stdin
-                            docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                            """
-                        }
-                        env.IMAGE_TAG=IMAGE_TAG
-                }        }
+                        git fetch origin
+                        git checkout main
+                        git reset --hard origin/main
 
-            stage('Update k8s Manifest'){
-                when { branch 'main'}
-                steps{
-                    script{
-                        withCredentials ([usernamePassword(
-                        credentialsId: "github-creds",
-                        usernameVariable: "GIT_USERNAME",
-                        passwordVariable: "GIT_TOKEN"
-                        )]){
-                            sh """
-                            set -e
-                            git config  user.name "${GIT_USER}"
-                            git config  user.email "${GIT_EMAIL}"
-                            git feach origin 
-                            git checkout main
-                            get reset --hard origin/main
-                            sed -i 's|image: . *|image: ${IMAGE_NAME}:${IMAGE_TAG}|' k8s/deployment.yaml
-                            git add k8s/deployment.yaml
-                            git diff --cached --quiet || git commit -m "Update image to tag ${IMAGE_TAG}"
-                            git push https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/srujan-patil/argodeployment.git main
-                            """
-                        }}
+                        sed -i "s|image: .*|image: ${IMAGE_NAME}:${IMAGE_TAG}|" k8s/deployment.yaml
 
+                        git add k8s/deployment.yaml
+                        git diff --cached --quiet || git commit -m "Update image to tag ${IMAGE_TAG}"
+                        git push https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/srujan-patil/argodeployment.git main
+                        """
+                    }
                 }
-                
+            }
         }
     }
 }
