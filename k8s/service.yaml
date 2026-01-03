@@ -1,11 +1,11 @@
-apiVersion: apps/v1
-kind: service
+apiVersion: v1
+kind: Service
 metadata:
   name: movie-app-service
-  namespace: default
 spec:
+  type: LoadBalancer
   selector:
-     app: movie-app
+    app: movie-app
   ports:
     - port: 80
       targetPort: 5000
